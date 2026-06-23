@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "会自我进化的 Agent",
-  description: "基于 ReAct 循环的自进化 Agent 交互界面",
+  title: "EvolveLab - 可视化 AI Agent 实验平台",
+  description: "看清 Agent 的每一步思考，给它装上你想要的任何工具",
 };
 
 export default function RootLayout({

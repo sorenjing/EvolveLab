@@ -302,9 +302,9 @@ function Header({
   return (
     <header className="flex items-center justify-between border-b border-zinc-200 pb-4 dark:border-zinc-800">
       <div>
-        <h1 className="text-xl font-bold tracking-tight">会自我进化的 Agent</h1>
+        <h1 className="text-xl font-bold tracking-tight">EvolveLab</h1>
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          ReAct 循环 · 工具调用 · 实时执行轨迹
+          可视化 AI Agent 实验平台 · 看清每一步思考
         </p>
       </div>
       <div className="flex items-center gap-2">
