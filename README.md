@@ -116,30 +116,12 @@ git clone https://github.com/sorenjing/evolvingAI.git
 cd evolvingAI
 ```
 
-### 2. 配置 LLM
+### 2. 启动服务
+
+API Key 在前端界面配置（存浏览器 localStorage，不会写入文件），无需提前创建 `.env`。
 
 ```bash
-cd backend
-cp .env.example .env
-# 编辑 .env，填入你的 API Key
-```
-
-<details>
-<summary>支持的 LLM 提供商（点击展开）</summary>
-
-| 提供商 | BASE_URL | 推荐 Model |
-|--------|----------|-----------|
-| 智谱 AI | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` |
-| Moonshot | `https://api.moonshot.cn/v1` | `moonshot-v1-8k` |
-| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
-| DeepSeek | `https://api.deepseek.com` | `deepseek-chat` |
-
-只需修改 `.env` 中的三个变量即可切换。
-</details>
-
-### 3. 启动后端
-
-```bash
+# 启动后端
 cd backend
 python -m venv venv
 
@@ -153,7 +135,7 @@ pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
-### 4. 启动前端
+### 3. 启动前端
 
 ```bash
 # 回到项目根目录
@@ -161,26 +143,34 @@ npm install
 npm run dev
 ```
 
-浏览器访问 **http://localhost:3000**，输入任务即可看到 Agent 实时执行轨迹。
+浏览器访问 **http://localhost:3000**，首次使用点击右上角「设置」配置 API Key 并测试连接，然后输入任务即可看到 Agent 实时执行轨迹。
 
 > **Windows 一键启动**：`.\start.ps1`
 
 ## 配置说明
 
-### 后端 (`backend/.env`)
+LLM 配置通过前端界面管理（点击右上角「设置」按钮）：
 
-| 变量 | 说明 | 默认值 |
+| 字段 | 说明 | 默认值 |
 |------|------|--------|
-| `LLM_API_KEY` | LLM API 密钥（必填） | — |
-| `LLM_BASE_URL` | LLM API 地址 | `https://open.bigmodel.cn/api/paas/v4` |
-| `LLM_MODEL` | 模型名称 | `glm-4-flash` |
-| `MAX_STEPS` | Agent 最大推理步数 | `15` |
+| API Key | LLM API 密钥（必填） | — |
+| Base URL | LLM API 地址 | `https://open.bigmodel.cn/api/paas/v4` |
+| Model | 模型名称 | `glm-4-flash` |
 
-### 前端 (`.env.local`)
+配置保存在浏览器 localStorage，**不会写入文件、不会上传 GitHub**，彻底杜绝密钥泄露风险。支持「测试连接」按钮一键验证配置是否可用。
 
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `NEXT_PUBLIC_BACKEND_URL` | 后端 API 地址 | `http://localhost:8001` |
+<details>
+<summary>支持的 LLM 提供商（点击展开）</summary>
+
+| 提供商 | BASE_URL | 推荐 Model |
+|--------|----------|-----------|
+| 智谱 AI | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` |
+| Moonshot | `https://api.moonshot.cn/v1` | `moonshot-v1-8k` |
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| DeepSeek | `https://api.deepseek.com` | `deepseek-chat` |
+
+在前端设置面板修改三个字段即可切换。
+</details>
 
 ## 项目结构
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 // 后端地址：优先读环境变量，默认本地 8001（与 RUN.md 一致）
 const BACKEND_URL =
@@ -33,6 +33,41 @@ const ROLES = [
   { value: "readonly", label: "只读" },
 ] as const;
 
+// ---------- LLM 配置（localStorage 持久化，避免 .env 泄密） ----------
+
+interface LlmConfig {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+}
+
+const DEFAULT_CONFIG: LlmConfig = {
+  apiKey: "",
+  baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+  model: "glm-4-flash",
+};
+
+const CONFIG_STORAGE_KEY = "evolvingai_llm_config";
+
+function loadConfig(): LlmConfig {
+  if (typeof window === "undefined") return DEFAULT_CONFIG;
+  try {
+    const raw = localStorage.getItem(CONFIG_STORAGE_KEY);
+    if (!raw) return DEFAULT_CONFIG;
+    return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
+  } catch {
+    return DEFAULT_CONFIG;
+  }
+}
+
+function saveConfig(cfg: LlmConfig): void {
+  try {
+    localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(cfg));
+  } catch {
+    // 忽略存储失败
+  }
+}
+
 // ---------- 主组件 ----------
 
 export default function Home() {
@@ -42,6 +77,18 @@ export default function Home() {
   const [status, setStatus] = useState<RunStatus>("idle");
   const [finalResult, setFinalResult] = useState<string>("");
   const [errorMsg, setErrorMsg] = useState<string>("");
+
+  // LLM 配置（localStorage 持久化）
+  const [config, setConfig] = useState<LlmConfig>(DEFAULT_CONFIG);
+  const [showConfig, setShowConfig] = useState(false);
+  const configLoaded = useRef(false);
+
+  // 首次挂载从 localStorage 加载配置
+  useEffect(() => {
+    if (configLoaded.current) return;
+    configLoaded.current = true;
+    setConfig(loadConfig());
+  }, []);
 
   // 用于中断 fetch
   const abortRef = useRef<AbortController | null>(null);
@@ -81,6 +128,13 @@ export default function Home() {
   const runAgent = useCallback(async () => {
     if (!task.trim() || status === "running") return;
 
+    // 检查 API Key 是否已配置
+    if (!config.apiKey.trim()) {
+      setErrorMsg("请先配置 LLM API Key（点击右上角「设置」按钮）");
+      setShowConfig(true);
+      return;
+    }
+
     // 重置状态
     setSteps([]);
     setFinalResult("");
@@ -94,7 +148,13 @@ export default function Home() {
       const resp = await fetch(`${BACKEND_URL}/api/agent/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task: task.trim(), role }),
+        body: JSON.stringify({
+          task: task.trim(),
+          role,
+          api_key: config.apiKey,
+          base_url: config.baseUrl,
+          model: config.model,
+        }),
         signal: controller.signal,
       });
 
@@ -143,7 +203,7 @@ export default function Home() {
     } finally {
       abortRef.current = null;
     }
-  }, [task, role, status, applyEvent]);
+  }, [task, role, status, applyEvent, config]);
 
   const stopAgent = useCallback(() => {
     abortRef.current?.abort();
@@ -154,7 +214,18 @@ export default function Home() {
   return (
     <div className="min-h-screen w-full bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-100">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-8">
-        <Header />
+        <Header onOpenConfig={() => setShowConfig((v) => !v)} configReady={!!config.apiKey.trim()} />
+
+        {showConfig && (
+          <ConfigPanel
+            config={config}
+            onChange={setConfig}
+            onSave={() => {
+              saveConfig(config);
+              setShowConfig(false);
+            }}
+          />
+        )}
 
         <InputArea
           task={task}
@@ -212,7 +283,7 @@ function fillStep(step: TimelineStep, ev: AgentEvent): void {
 
 // ---------- 子组件 ----------
 
-function Header() {
+function Header({ onOpenConfig, configReady }: { onOpenConfig: () => void; configReady: boolean }) {
   return (
     <header className="flex items-center justify-between border-b border-zinc-200 pb-4 dark:border-zinc-800">
       <div>
@@ -221,13 +292,134 @@ function Header() {
           ReAct 循环 · 工具调用 · 实时执行轨迹
         </p>
       </div>
-      <span
-        className="rounded-full bg-zinc-200 px-3 py-1 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-        aria-hidden
+      <button
+        type="button"
+        onClick={onOpenConfig}
+        className="flex items-center gap-2 rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium transition hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
       >
-        SSE
-      </span>
+        <span
+          className={`h-2 w-2 rounded-full ${configReady ? "bg-emerald-500" : "bg-amber-500"}`}
+          title={configReady ? "已配置" : "未配置 API Key"}
+        />
+        设置
+      </button>
     </header>
+  );
+}
+
+// ---------- LLM 配置面板 ----------
+
+function ConfigPanel({
+  config,
+  onChange,
+  onSave,
+}: {
+  config: LlmConfig;
+  onChange: (cfg: LlmConfig) => void;
+  onSave: () => void;
+}) {
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const handleTest = useCallback(async () => {
+    if (!config.apiKey.trim()) {
+      setTestResult({ ok: false, message: "API Key 不能为空" });
+      return;
+    }
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const resp = await fetch(`${BACKEND_URL}/api/config/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_key: config.apiKey,
+          base_url: config.baseUrl,
+          model: config.model,
+        }),
+      });
+      const data = await resp.json();
+      setTestResult({ ok: data.ok, message: data.message });
+    } catch (e) {
+      setTestResult({ ok: false, message: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setTesting(false);
+    }
+  }, [config]);
+
+  const update = (field: keyof LlmConfig, value: string) => {
+    onChange({ ...config, [field]: value });
+  };
+
+  return (
+    <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+      <p className="mb-3 text-sm font-semibold">LLM 配置</p>
+      <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+        配置仅保存在浏览器 localStorage，不会写入文件或上传 GitHub。
+      </p>
+      <div className="flex flex-col gap-3">
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium">API Key</span>
+          <input
+            type="password"
+            value={config.apiKey}
+            onChange={(e) => update("apiKey", e.target.value)}
+            placeholder="your-api-key"
+            className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-300"
+          />
+        </label>
+        <div className="flex gap-3">
+          <label className="flex flex-1 flex-col gap-1 text-sm">
+            <span className="font-medium">Base URL</span>
+            <input
+              type="text"
+              value={config.baseUrl}
+              onChange={(e) => update("baseUrl", e.target.value)}
+              placeholder="https://open.bigmodel.cn/api/paas/v4"
+              className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-300"
+            />
+          </label>
+          <label className="flex w-40 flex-col gap-1 text-sm">
+            <span className="font-medium">Model</span>
+            <input
+              type="text"
+              value={config.model}
+              onChange={(e) => update("model", e.target.value)}
+              placeholder="glm-4-flash"
+              className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-300"
+            />
+          </label>
+        </div>
+        {testResult && (
+          <div
+            className={`rounded-md border p-2 text-xs ${
+              testResult.ok
+                ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
+                : "border-red-300 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
+            }`}
+          >
+            {testResult.message}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleTest}
+            disabled={testing}
+            className="rounded-lg border border-zinc-300 px-4 py-1.5 text-sm font-medium transition hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          >
+            {testing ? "测试中..." : "测试连接"}
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            className="rounded-lg bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          >
+            保存
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 
