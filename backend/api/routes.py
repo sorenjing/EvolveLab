@@ -6,16 +6,22 @@ import asyncio
 import time
 from typing import Any
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from agent.kernel import AgentKernel, AgentEvent
 from auth.permissions import get_permission_cache
 from auth.capability import get_llm_capability
+from auth.admin import require_admin
 from tools.cleanup import cleanup_all
 from config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
 import httpx
+
+# 速率限制器（从 main 注入，避免循环导入）
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter()
 
@@ -57,7 +63,8 @@ class TaskRequest(BaseModel):
 
 
 @router.post("/agent/stream")
-async def agent_stream(req: TaskRequest):
+@limiter.limit("10/minute")
+async def agent_stream(request: Request, req: TaskRequest):
     """启动 Agent 任务，以 SSE 流式返回执行轨迹。"""
     kernel = AgentKernel(
         task=req.task,
@@ -106,14 +113,14 @@ class RoleUpdate(BaseModel):
     config: dict[str, Any] | None = None
 
 
-@router.post("/admin/role")
+@router.post("/admin/role", dependencies=[Depends(require_admin)])
 async def set_role(body: RoleUpdate):
     perm = get_permission_cache()
     perm.set_role(body.role)
     return {"role": body.role, "config": perm.get_role_config(body.role)}
 
 
-@router.get("/admin/role")
+@router.get("/admin/role", dependencies=[Depends(require_admin)])
 async def get_role():
     perm = get_permission_cache()
     return {"role": perm.get_role(), "config": perm.get_role_config()}
@@ -124,7 +131,7 @@ class WhitelistUpdate(BaseModel):
     action: str  # add | remove
 
 
-@router.post("/admin/whitelist")
+@router.post("/admin/whitelist", dependencies=[Depends(require_admin)])
 async def update_whitelist(body: WhitelistUpdate):
     perm = get_permission_cache()
     if body.action == "add":
@@ -138,7 +145,7 @@ async def update_whitelist(body: WhitelistUpdate):
 
 # ---------- LLM 能力探测 ----------
 
-@router.get("/admin/capability")
+@router.get("/admin/capability", dependencies=[Depends(require_admin)])
 async def get_capability(model: str = LLM_MODEL):
     cap = get_llm_capability(model)
     return {
@@ -147,7 +154,7 @@ async def get_capability(model: str = LLM_MODEL):
     }
 
 
-@router.post("/admin/capability")
+@router.post("/admin/capability", dependencies=[Depends(require_admin)])
 async def set_capability(model: str, vision: bool):
     cap = get_llm_capability(model)
     cap.force_set(vision)
@@ -156,14 +163,14 @@ async def set_capability(model: str, vision: bool):
 
 # ---------- 沙箱垃圾清除 ----------
 
-@router.post("/admin/cleanup")
+@router.post("/admin/cleanup", dependencies=[Depends(require_admin)])
 async def run_cleanup():
     """手动触发沙箱垃圾清除。"""
     result = cleanup_all()
     return result
 
 
-@router.get("/admin/cleanup")
+@router.get("/admin/cleanup", dependencies=[Depends(require_admin)])
 async def cleanup_status():
     """查看可清理的垃圾文件数量（不实际删除）。"""
     from tools.cleanup import cleanup_backups, cleanup_screenshots

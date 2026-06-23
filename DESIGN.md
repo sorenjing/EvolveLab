@@ -4,11 +4,13 @@
 
 | 层级 | 选型 | 理由 |
 |------|------|------|
-| 前端框架 | Next.js 15 (App Router) + TypeScript | 全栈一体，API Route 直接作为 Agent 后端，无需额外服务 |
-| 样式 | Tailwind CSS | 快速搭建执行轨迹展示界面 |
-| 大模型接入 | Vercel AI SDK (`ai` + `@ai-sdk/openai`) | 底层仍是自己实现循环，SDK 只做流式调用与类型安全 |
-| 模型 | OpenAI-compatible (via Moonshot/baseUrl) | 使用提供的 API Key，支持流式输出 |
-| 运行时 | Node.js 20+ | 支持原生 `fetch`、`structuredClone` |
+| 前端 | Next.js 16 (App Router) + TypeScript + Tailwind CSS | Timeline 可视化、配置面板、工具管理 |
+| 后端 | Python + FastAPI + Uvicorn | SSE 流式响应、工具执行（Python 生态适合文件/系统操作） |
+| 大模型 | OpenAI-compatible API（智谱 GLM 等） | 前端配置 API Key，经后端转发调用 |
+| 通信 | SSE (Server-Sent Events) | 实时推送 Agent 执行轨迹 |
+
+> **架构说明**：前后端分离。前端为 Next.js 静态页面，后端为独立 Python FastAPI 服务。
+> Agent 内核、工具系统、安全层均在后端 Python 实现。
 
 ---
 
@@ -25,168 +27,102 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
-#### ReAct 推理循环（自己实现）
-
-不使用 LangChain/AutoGen 等现成框架，自行控制每一步：
+#### ReAct 推理循环（自研，不依赖 LangChain）
 
 ```
-while (step < maxSteps && !taskDone) {
-  1. 构造 Prompt：System Prompt + 历史 Thought/Action/Observation + 当前任务
-  2. 调用 LLM，要求输出 JSON：{ thought, action, actionInput }
-  3. 解析 JSON（失败则重试/容错）
-  4. 若 action === "final_answer" → 结束循环
-  5. 否则，路由到对应 Tool，执行得到 Observation
-  6. 将 Thought/Action/Observation 写入历史，继续循环
-}
-```
-
-**Prompt 格式（强制 JSON 输出）**：
-
-```
-你是一个能使用工具的 Agent。你必须按以下格式思考并行动：
-
-{
-  "thought": "分析当前情况，决定下一步",
-  "action": "工具名或 final_answer",
-  "actionInput": { ...参数... }
-}
-
-可用工具：
-- readFile: { path }
-- writeFile: { path, content }
-- executeCommand: { command, cwd? }
-- searchFiles: { pattern, path? }
-- listFiles: { path }
-
-规则：
-- 必须输出合法 JSON，不含其他文字
-- 若任务已完成，action 填 "final_answer"，actionInput 填结果
-- 不要假设文件内容，不确定时先 readFile
+while (step < maxSteps && !taskDone):
+    1. 构造 Prompt：System Prompt + 历史 Thought/Action/Observation + 当前任务
+    2. 调用 LLM，要求输出 JSON：{ thought, action, actionInput }
+    3. 解析 JSON（失败则容错重试）
+    4. 若 action === "final_answer" → 结束循环
+    5. 否则，路由到对应 Tool，执行得到 Observation
+    6. 将 Thought/Action/Observation 写入历史，继续循环
 ```
 
 ### 2.2 工具层设计
 
-| 工具 ID | 功能 | 安全边界 |
-|---------|------|----------|
-| `readFile` | 读取文件内容（文本） | 只允许项目目录内 |
-| `writeFile` | 写入/覆盖文件 | 只允许项目目录内，写前备份 |
-| `editFile` | 基于 Search/Replace 修改文件 | 同上，失败时回滚 |
-| `executeCommand` | 执行 shell 命令 | 白名单机制：只允许 `npm`, `node`, `npx`, `git status` 等只读/构建命令；禁止 `rm -rf /` 等 |
-| `listFiles` | 列出目录结构 | 项目目录内 |
-| `searchFiles` | 按内容或文件名搜索 | 项目目录内 |
-| `final_answer` | 结束任务，返回结果 | — |
+| 工具 | 功能 | 安全边界 |
+|------|------|----------|
+| `read_file` | 读取文件内容 | 项目目录内，<1MB |
+| `write_file` | 写入/覆盖文件 | 项目目录内，写前备份 |
+| `edit_file` | Search/Replace 修改文件 | 同上 |
+| `delete_file` | 删除文件 | 需高权限 |
+| `execute_command` | 执行命令 | 三层命令注入防御 + 白名单 |
+| `list_files` | 列出目录 | 项目目录内 |
+| `search_files` | 搜索文件内容/文件名 | 项目目录内 |
+| `screenshot` | 截屏 | — |
+| `cleanup` | 清理临时文件 | — |
+| `create_snapshot` | 创建 Git 快照 | 自我修改安全层 |
+| `verify_build` | 构建验证 | 后端语法 + 前端类型检查 |
+| `rollback` | 回滚到快照 | 验证失败时调用 |
+| `create_tool` | 创建自定义工具 | Phase 3：Agent 自主扩展能力 |
+| `list_tools` | 列出所有工具 | 查看能力边界 |
+| `delete_tool` | 删除自定义工具 | 仅限自定义工具 |
+| `final_answer` | 结束任务 | — |
 
-**工具定义（Zod Schema）**：
-每个工具有 `name`、`description`、`parameters`（Zod Object）、`execute` 函数。
-Agent Kernel 在每次循环时，将工具列表以 JSON Schema 形式注入 Prompt，让模型知道可调用的工具签名。
+### 2.3 容错与防死循环
 
-### 2.3 多轮调用与状态管理
-
-- **服务端状态**：由于 Next.js API Route 是无状态的，每次流式请求在服务端维护一个 `AgentSession` 对象（存在内存 Map 中，以 `sessionId` 为键）。
-- **前端状态**：SSE (Server-Sent Events) 实时推送每一步的 `thought`、`action`、`observation`、`status`。
-- **容错**：
-  - LLM 返回非 JSON：尝试正则提取 JSON；失败则重试（最多 2 次）。
-  - 工具执行报错：`Observation` 中返回错误信息，让 LLM 自行决定重试或换方案。
-  - 死循环检测：若连续 3 次 `action` 完全相同，强制终止并提示用户。
-
----
-
-## 3. 前端设计
-
-### 3.1 页面结构
-
-```
-┌────────────────────────────────────┐
-│  Header: Agent Evolution           │
-├────────────────────────────────────┤
-│  Input Area                        │
-│  [ 请输入任务...          ] [执行] │
-├────────────────────────────────────┤
-│  Execution Timeline                │
-│  ┌─ Step 1 ───────────────────┐   │
-│  │ 🤔 Thought: 分析需求...     │   │
-│  │ 🔧 Action: readFile(...)    │   │
-│  │ 📋 Observation: 文件内容... │   │
-│  └─────────────────────────────┘   │
-│  ┌─ Step 2 ───────────────────┐   │
-│  │ ...                         │   │
-│  └─────────────────────────────┘   │
-├────────────────────────────────────┤
-│  Final Result                      │
-└────────────────────────────────────┘
-```
-
-### 3.2 交互流程
-
-1. 用户在输入框填入任务，点击「执行」。
-2. 前端通过 `fetch('/api/agent', { body: { task, sessionId } })` 建立 SSE 连接。
-3. 服务端启动 ReAct Loop，每完成一步通过 `data: { type, payload }` 推送给前端。
-4. 前端解析 SSE，按时间顺序渲染 Timeline。
-5. 任务结束（`final_answer` 或异常）后，SSE 关闭，展示最终结果。
+- **JSON 解析容错**：LLM 返回非 JSON 时，正则提取 + 重试
+- **死循环检测**：连续 3 次相同 action 强制终止
+- **上下文压缩**：历史过长时自动压缩，保留 todo 和完成状态
+- **工具执行报错**：错误信息作为 Observation 返回，让 LLM 自行决策
 
 ---
 
-## 4. 自我修改机制设计（进阶）
+## 3. 安全设计
 
-### 4.1 核心思想
+### 3.1 命令注入防御（三层）
 
-Agent 的源码对它而言只是**另一组可读写文件**。只要给它正确的工具和自我认知，它就能像修改业务代码一样修改自己的工具集合或 Prompt。
+1. **黑名单正则**：拦截 `rm -rf /`、`format`、`del /f` 等危险命令
+2. **元字符禁用**：禁止 `;`、`|`、`&`、`$()`、反引号等 shell 元字符
+3. **shlex 精确白名单匹配**：用 `shlex.split` 解析后，精确匹配白名单命令前缀
 
-### 4.2 自我修改的层级
+### 3.2 管理接口认证
 
-| 层级 | 修改对象 | 实现方式 | 风险等级 |
-|------|----------|----------|----------|
-| L1 增加工具 | `src/lib/tools/` 下新增工具文件 | 模型生成代码 → writeFile → 动态 import | 中 |
-| L2 修改 Prompt | `src/lib/prompts/system.ts` | 模型生成新 Prompt → editFile | 中 |
-| L3 修改内核 | `src/lib/agent.ts`（循环逻辑） | 模型重写核心循环 | **高** |
-| L4 修改配置 | `next.config.js`、依赖列表 | 模型增删依赖或构建配置 | **高** |
+- `/api/admin/*` 接口默认仅允许 localhost 访问
+- 非 localhost 访问需配置 `ADMIN_TOKEN` 环境变量并携带 `X-Admin-Token` 请求头
 
-### 4.3 安全与隔离机制（关键）
+### 3.3 网络安全
 
-直接让 Agent 改自己的源码极易导致系统崩溃。必须设计**沙箱与回滚**：
+- **CORS**：默认仅允许 `http://localhost:3000`，可通过 `ALLOWED_ORIGINS` 环境变量配置
+- **监听地址**：默认 `127.0.0.1`，需外网访问时设置 `HOST=0.0.0.0`
+- **速率限制**：全局 30 次/分钟，Agent 接口 10 次/分钟（防止 LLM 额度滥用）
 
-#### A. 版本快照（Snapshot）
+### 3.4 自我修改安全层
 
-- 在 Agent 启动自我修改前，自动对 `src/` 目录做 Git 快照：
-  ```bash
-  git stash push -m "pre-self-modify-$(timestamp)"
-  ```
-- 每次修改后尝试 `npm run build`：
-  - 构建通过 → 保留修改，提示用户。
-  - 构建失败 → 自动 `git stash pop` 回滚，Observation 返回错误让模型重试。
+| 阶段 | 操作 | 工具 |
+|------|------|------|
+| 修改前 | 创建 Git 快照（HEAD + stash + untracked） | `create_snapshot` |
+| 修改 | 写入/编辑文件 | `write_file` / `edit_file` |
+| 验证 | 后端语法检查 + 前端类型检查 | `verify_build` |
+| 回滚 | 验证失败时恢复 | `rollback` |
 
-#### B. 工具白名单与能力声明
+---
 
-- Agent 的 Prompt 中显式列出「你能修改的文件范围」。
-- `writeFile`/`editFile` 对核心文件（如 `agent.ts`、`package.json`）增加二次确认：
-  - 修改核心文件前，必须先生成一个 `.patch` 文件，经用户确认或自动测试通过后再应用。
+## 4. 自我进化机制
 
-#### C. 最小权限原则
+### 4.1 进化层级
 
-- 新增工具（L1）最安全：只需在约定目录新增文件，并导出到 `tools/index.ts` 的注册表中。
-- 修改内核（L3）默认关闭，需用户显式授权 `allowKernelMutation: true`。
+| 层级 | 修改对象 | 实现状态 |
+|------|----------|----------|
+| L1 新增工具 | `backend/tools/custom/` 下新增工具文件 | ✅ Phase 3 已实现 |
+| L2 修改 Prompt | `backend/agent/prompts.py` | ⬜ Phase 4 |
+| L3 修改内核 | `backend/agent/kernel.py` | ⬜ Phase 4 |
+| L4 修改配置 | 依赖列表、构建配置 | ⬜ Phase 4 |
 
-### 4.4 自举流程（示范）
+### 4.2 工具自举流程（L1 已实现）
 
-用户任务："给自己增加一个能计算数学表达式的工具"
+用户任务："给自己增加一个能调用 HTTP API 的工具"
 
 ```
-Step 1: Thought → 需要新增一个 mathEval 工具
-Step 2: Action  → readFile({ path: "src/lib/tools/index.ts" })
-         Observation → 看到工具注册表结构
-Step 3: Action  → writeFile({
-           path: "src/lib/tools/mathEval.ts",
-           content: "...导出 mathEval 工具..."
-         })
-Step 4: Action  → editFile({
-           path: "src/lib/tools/index.ts",
-           search: "export const tools = [",
-           replace: "export const tools = [\n  mathEval,"
-         })
-Step 5: Action  → executeCommand({ command: "npm run build" })
-         Observation → build success
-Step 6: Action  → final_answer({ result: "已新增 mathEval 工具" })
+Step 1: list_tools() → 查看当前能力边界
+Step 2: create_tool(name="http_get", description="HTTP GET 请求", args=["url"], code="...")
+         → 写入 custom/http_get.py + 动态加载注册
+Step 3: http_get(url="https://api.example.com/data") → 调用新工具
+Step 4: final_answer(result="已创建 http_get 工具并完成任务")
 ```
+
+工具持久化到 `backend/tools/custom/` 目录，重启后自动加载。
 
 ---
 
@@ -197,105 +133,71 @@ Step 6: Action  → final_answer({ result: "已新增 mathEval 工具" })
 │                        Browser                               │
 │  ┌──────────────┐    ┌──────────────────────────────────┐  │
 │  │  Task Input  │───→│  Timeline (SSE Stream Renderer)  │  │
+│  │  Config Panel│    │  Tools Panel                     │  │
 │  └──────────────┘    └──────────────────────────────────┘  │
 └────────────────────────────┬─────────────────────────────────┘
-                             │ POST /api/agent (SSE)
+                             │ POST /api/agent/stream (SSE)
 ┌────────────────────────────▼─────────────────────────────────┐
-│                    Next.js API Route                         │
+│                  Python FastAPI Backend                       │
 │  ┌──────────────┐    ┌──────────────┐    ┌─────────────┐   │
 │  │ Agent Kernel │───→│  Tool Router │───→│  Tool Impl  │   │
-│  │ (ReAct Loop) │    │ (Zod Schema) │    │ (File/Exec) │   │
+│  │ (ReAct Loop) │    │              │    │ (File/Exec) │   │
 │  └──────────────┘    └──────────────┘    └─────────────┘   │
-│         ↑                                   │                │
-│         └────────── LLM API ────────────────┘                │
-│                          (OpenAI-compatible)                 │
+│         ↑              ┌──────────────┐                     │
+│         └──────────────│ Safety Layer │                     │
+│                        │ (Snapshot/   │                     │
+│                        │  Verify/     │                     │
+│                        │  Rollback)   │                     │
+│                        └──────────────┘                     │
+│         ↑                                                   │
+│         └────────── LLM API ────────────────                │
+│                     (OpenAI-compatible)                      │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 6. 目录结构（规划）
+## 6. 目录结构
 
 ```
-agent-evolution/
+evolvingAI/
+├── backend/
+│   ├── main.py                   # FastAPI 入口
+│   ├── config.py                 # 配置（环境变量）
+│   ├── agent/
+│   │   ├── kernel.py             # Agent Kernel（ReAct 循环）
+│   │   ├── llm.py                # LLM 调用封装
+│   │   └── prompts.py            # System Prompt 模板
+│   ├── api/
+│   │   └── routes.py             # API 路由（SSE + 管理 + 工具）
+│   ├── auth/
+│   │   ├── permissions.py        # 权限管理 + 命令注入防御
+│   │   ├── capability.py         # LLM 能力探测
+│   │   └── admin.py              # 管理接口认证
+│   └── tools/
+│       ├── __init__.py           # 工具注册表
+│       ├── file_tools.py         # 文件操作工具
+│       ├── system_tools.py       # 系统命令工具
+│       ├── screenshot.py         # 截屏工具
+│       ├── cleanup.py            # 清理工具
+│       ├── safety.py             # 自我修改安全层
+│       ├── lifecycle.py          # 工具生命周期管理
+│       ├── registry.py           # 自定义工具动态加载器
+│       └── custom/               # Agent 创建的自定义工具（持久化）
 ├── src/
-│   ├── app/
-│   │   ├── page.tsx              # 主界面（输入 + Timeline）
-│   │   ├── layout.tsx            # 根布局
-│   │   └── api/
-│   │       └── agent/
-│   │           └── route.ts      # SSE Agent 接口
-│   ├── lib/
-│   │   ├── agent.ts              # Agent Kernel（ReAct 循环）
-│   │   ├── llm.ts                # LLM 调用封装（AI SDK）
-│   │   ├── session.ts            # Session 管理（内存 Map）
-│   │   ├── tools/
-│   │   │   ├── index.ts          # 工具注册表
-│   │   │   ├── readFile.ts
-│   │   │   ├── writeFile.ts
-│   │   │   ├── editFile.ts
-│   │   │   ├── executeCommand.ts
-│   │   │   ├── listFiles.ts
-│   │   │   ├── searchFiles.ts
-│   │   │   └── mathEval.ts       # （可由 Agent 自己新增）
-│   │   └── prompts/
-│   │       └── system.ts         # System Prompt 模板
-│   └── types/
-│       └── agent.ts              # 共享类型定义
-├── DESIGN.md                     # 本设计文档
+│   └── app/
+│       └── page.tsx              # 前端主界面
+├── DESIGN.md                     # 本文档
+├── README.md
 └── package.json
 ```
 
 ---
 
-## 7. 关键接口
+## 7. 演进路线
 
-### SSE 事件格式
-
-```ts
-type AgentEvent =
-  | { type: 'thought'; content: string; step: number }
-  | { type: 'action'; tool: string; input: unknown; step: number }
-  | { type: 'observation'; result: string; step: number }
-  | { type: 'error'; message: string; step: number }
-  | { type: 'complete'; result: string };
-```
-
-### Agent 配置
-
-```ts
-interface AgentConfig {
-  maxSteps: number;           // 默认 15
-  model: string;              // 默认 'moonshot-v1-8k'
-  apiKey: string;
-  baseURL: string;
-  allowKernelMutation: boolean; // 默认 false（安全开关）
-}
-```
-
----
-
-## 8. 启动说明（后续交付）
-
-```bash
-# 1. 进入项目
-cd agent-evolution
-
-# 2. 配置环境变量
-cp .env.local.example .env.local
-# 编辑 .env.local，填入 API Key 与 BaseURL
-
-# 3. 开发模式启动
-npm run dev
-
-# 4. 浏览器访问 http://localhost:3000
-```
-
----
-
-## 9. 演进路线
-
-1. **Phase 1（必做）**：实现基础 ReAct Loop + 6 个文件/命令工具 + 前端 Timeline，确保能跑通多轮调用。
-2. **Phase 2（进阶）**：增加「自我修改」安全层（Git 快照 + 构建验证 + 回滚）。
-3. **Phase 3（进阶）**：实现 L1「新增工具」的端到端自举（Agent 自己写工具文件并注册）。
-4. **Phase 4（顶尖）**：实现 L2/L3 的 Prompt/内核修改，并能在修改后继续稳定运行。
+- [x] **Phase 1**：基础 ReAct Loop + 工具系统 + 前端 Timeline
+- [x] **安全加固**：命令注入防御、会话 TTL、JSON 解析容错、单例修复
+- [x] **Phase 2**：自我修改安全层（Git 快照 + 构建验证 + 回滚）
+- [x] **Phase 3**：Agent 自主扩展工具（create_tool + 本地持久化 + 工具列表）
+- [ ] **Phase 4**：L2/L3 Prompt/内核修改
