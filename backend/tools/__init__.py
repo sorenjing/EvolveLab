@@ -2,7 +2,7 @@
 工具注册表：集中注册所有可用工具，供 Agent Kernel 动态调用。
 """
 from typing import Callable, Dict, Any
-from . import file_tools, system_tools, screenshot, cleanup
+from . import file_tools, system_tools, screenshot, cleanup, safety
 
 # 工具名称 -> 执行函数的映射
 TOOLS: Dict[str, Callable[..., str]] = {
@@ -15,6 +15,11 @@ TOOLS: Dict[str, Callable[..., str]] = {
     "search_files": system_tools.search_files,
     "screenshot": screenshot.screenshot,
     "cleanup": cleanup.cleanup_all,
+    # 自我修改安全层
+    "create_snapshot": safety.create_snapshot,
+    "verify_build": safety.verify_build,
+    "rollback": safety.rollback,
+    "list_snapshots": safety.list_snapshots,
 }
 
 # 工具元数据（供 Prompt 描述）
@@ -62,6 +67,26 @@ TOOLS_META: list[dict[str, Any]] = [
     {
         "name": "cleanup",
         "description": "清理沙箱垃圾（.bak备份、过期截图、pycache）。无需参数。",
+        "args": [],
+    },
+    {
+        "name": "create_snapshot",
+        "description": "修改自身源码前创建 Git 快照。无需参数。返回快照ID。",
+        "args": [],
+    },
+    {
+        "name": "verify_build",
+        "description": "运行构建验证（后端语法+前端类型）。无需参数。修改代码后必须调用。",
+        "args": [],
+    },
+    {
+        "name": "rollback",
+        "description": "回滚到指定快照。参数: {\"snapshot_id\": \"快照ID\"}。验证失败时调用。",
+        "args": ["snapshot_id"],
+    },
+    {
+        "name": "list_snapshots",
+        "description": "列出所有已创建的快照。无需参数。",
         "args": [],
     },
     {

@@ -31,6 +31,12 @@ def build_system_prompt(tools_meta: list[dict[str, Any]], allow_screenshot: bool
         "- 不确定文件内容时，先用 read_file 查看，不要假设。",
         "- 不要重复执行已经成功的相同操作。",
         "- 命令执行工具受白名单限制，如被拒绝请换用文件工具。",
+        "",
+        "自我修改安全流程（修改本项目源码时必须遵守）：",
+        "1. 修改前：调用 create_snapshot 创建快照，记住返回的快照ID",
+        "2. 修改：用 write_file 或 edit_file 修改文件",
+        "3. 验证：调用 verify_build 检查修改是否破坏项目",
+        "4. 若验证失败：调用 rollback 回滚到快照，不要带着错误继续",
     ])
     return "\n".join(lines)
 
