@@ -1,65 +1,400 @@
-import Image from "next/image";
+"use client";
+
+import { useState, useRef, useCallback } from "react";
+
+// 后端地址：优先读环境变量，默认本地 8001（与 RUN.md 一致）
+const BACKEND_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8001";
+
+// ---------- 类型定义 ----------
+
+type AgentEventType = "thought" | "action" | "observation" | "error" | "complete";
+
+interface AgentEvent {
+  type: AgentEventType;
+  step: number;
+  payload: Record<string, unknown>;
+}
+
+// 单个步骤聚合：一个 step 可能先后收到 thought / action / observation
+interface TimelineStep {
+  step: number;
+  thought?: string;
+  action?: { tool: string; input: unknown };
+  observation?: string;
+  error?: string;
+}
+
+type RunStatus = "idle" | "running" | "done" | "error";
+
+const ROLES = [
+  { value: "standard", label: "标准" },
+  { value: "admin", label: "管理员" },
+  { value: "readonly", label: "只读" },
+] as const;
+
+// ---------- 主组件 ----------
 
 export default function Home() {
+  const [task, setTask] = useState("");
+  const [role, setRole] = useState<string>("standard");
+  const [steps, setSteps] = useState<TimelineStep[]>([]);
+  const [status, setStatus] = useState<RunStatus>("idle");
+  const [finalResult, setFinalResult] = useState<string>("");
+  const [errorMsg, setErrorMsg] = useState<string>("");
+
+  // 用于中断 fetch
+  const abortRef = useRef<AbortController | null>(null);
+
+  // 将事件聚合到对应 step
+  const applyEvent = useCallback((ev: AgentEvent) => {
+    if (ev.type === "complete") {
+      const result =
+        typeof ev.payload.result === "string" ? ev.payload.result : "";
+      setFinalResult(result);
+      setStatus("done");
+      return;
+    }
+    if (ev.type === "error") {
+      const msg =
+        typeof ev.payload.message === "string" ? ev.payload.message : "未知错误";
+      setErrorMsg(msg);
+      setStatus("error");
+      return;
+    }
+
+    setSteps((prev) => {
+      const idx = prev.findIndex((s) => s.step === ev.step);
+      if (idx === -1) {
+        // 新 step
+        const next: TimelineStep = { step: ev.step };
+        fillStep(next, ev);
+        return [...prev, next];
+      }
+      const copy = [...prev];
+      copy[idx] = { ...copy[idx] };
+      fillStep(copy[idx], ev);
+      return copy;
+    });
+  }, []);
+
+  const runAgent = useCallback(async () => {
+    if (!task.trim() || status === "running") return;
+
+    // 重置状态
+    setSteps([]);
+    setFinalResult("");
+    setErrorMsg("");
+    setStatus("running");
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      const resp = await fetch(`${BACKEND_URL}/api/agent/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task: task.trim(), role }),
+        signal: controller.signal,
+      });
+
+      if (!resp.ok || !resp.body) {
+        throw new Error(`后端响应异常: HTTP ${resp.status}`);
+      }
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE 事件以空行分隔
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6);
+          if (data === "[DONE]") {
+            // 流正常结束；若未收到 complete 事件，标记为 done
+            setStatus((s) => (s === "running" ? "done" : s));
+            return;
+          }
+          try {
+            const ev = JSON.parse(data) as AgentEvent;
+            applyEvent(ev);
+          } catch {
+            // 忽略无法解析的行
+          }
+        }
+      }
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") {
+        setStatus("idle");
+        return;
+      }
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(msg);
+      setStatus("error");
+    } finally {
+      abortRef.current = null;
+    }
+  }, [task, role, status, applyEvent]);
+
+  const stopAgent = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  const running = status === "running";
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <div className="min-h-screen w-full bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-100">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-8">
+        <Header />
+
+        <InputArea
+          task={task}
+          role={role}
+          running={running}
+          onTaskChange={setTask}
+          onRoleChange={setRole}
+          onRun={runAgent}
+          onStop={stopAgent}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+
+        {errorMsg && (
+          <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+            <p className="font-semibold">出错</p>
+            <p className="mt-1 whitespace-pre-wrap break-all">{errorMsg}</p>
+          </div>
+        )}
+
+        <Timeline steps={steps} />
+
+        {finalResult && (
+          <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-950">
+            <p className="mb-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+              最终结果
+            </p>
+            <p className="whitespace-pre-wrap break-words text-sm text-emerald-900 dark:text-emerald-100">
+              {finalResult}
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
+}
+
+// ---------- 辅助：将事件字段填入 step ----------
+
+function fillStep(step: TimelineStep, ev: AgentEvent): void {
+  switch (ev.type) {
+    case "thought":
+      step.thought = typeof ev.payload.content === "string" ? ev.payload.content : "";
+      break;
+    case "action":
+      step.action = {
+        tool: typeof ev.payload.tool === "string" ? ev.payload.tool : "",
+        input: ev.payload.input,
+      };
+      break;
+    case "observation":
+      step.observation =
+        typeof ev.payload.result === "string" ? ev.payload.result : "";
+      break;
+  }
+}
+
+// ---------- 子组件 ----------
+
+function Header() {
+  return (
+    <header className="flex items-center justify-between border-b border-zinc-200 pb-4 dark:border-zinc-800">
+      <div>
+        <h1 className="text-xl font-bold tracking-tight">会自我进化的 Agent</h1>
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          ReAct 循环 · 工具调用 · 实时执行轨迹
+        </p>
+      </div>
+      <span
+        className="rounded-full bg-zinc-200 px-3 py-1 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+        aria-hidden
+      >
+        SSE
+      </span>
+    </header>
+  );
+}
+
+interface InputAreaProps {
+  task: string;
+  role: string;
+  running: boolean;
+  onTaskChange: (v: string) => void;
+  onRoleChange: (v: string) => void;
+  onRun: () => void;
+  onStop: () => void;
+}
+
+function InputArea({
+  task,
+  role,
+  running,
+  onTaskChange,
+  onRoleChange,
+  onRun,
+  onStop,
+}: InputAreaProps) {
+  return (
+    <section className="flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+      <label htmlFor="task" className="text-sm font-medium">
+        任务描述
+      </label>
+      <textarea
+        id="task"
+        value={task}
+        onChange={(e) => onTaskChange(e.target.value)}
+        disabled={running}
+        placeholder="例如：列出当前项目根目录的文件，并总结项目结构。"
+        rows={3}
+        className="w-full resize-y rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none transition focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-300 disabled:opacity-50"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            onRun();
+          }
+        }}
+      />
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-zinc-500 dark:text-zinc-400">角色</span>
+          <select
+            value={role}
+            onChange={(e) => onRoleChange(e.target.value)}
+            disabled={running}
+            className="rounded-lg border border-zinc-300 bg-transparent px-2 py-1 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-300 disabled:opacity-50"
+          >
+            {ROLES.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="flex-1" />
+        {running ? (
+          <button
+            type="button"
+            onClick={onStop}
+            className="rounded-lg border border-red-300 px-4 py-1.5 text-sm font-medium text-red-600 transition hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
+          >
+            停止
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onRun}
+            disabled={!task.trim()}
+            className="rounded-lg bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+          >
+            执行 (Ctrl+Enter)
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function Timeline({ steps }: { steps: TimelineStep[] }) {
+  if (steps.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-400 dark:border-zinc-700">
+        执行轨迹将在此处实时显示
+      </div>
+    );
+  }
+  return (
+    <section className="flex flex-col gap-3">
+      {steps.map((s) => (
+        <StepCard key={s.step} step={s} />
+      ))}
+    </section>
+  );
+}
+
+function StepCard({ step }: { step: TimelineStep }) {
+  return (
+    <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+        <span className="rounded bg-zinc-200 px-1.5 py-0.5 dark:bg-zinc-800">
+          Step {step.step}
+        </span>
+      </div>
+      <div className="flex flex-col gap-2 text-sm">
+        {step.thought !== undefined && (
+          <Field icon="THOUGHT" label="思考" tone="blue">
+            <p className="whitespace-pre-wrap break-words">{step.thought}</p>
+          </Field>
+        )}
+        {step.action && (
+          <Field icon="ACTION" label="动作" tone="amber">
+            <p className="font-mono text-xs">
+              {step.action.tool}(
+              {formatInput(step.action.input)})
+            </p>
+          </Field>
+        )}
+        {step.observation !== undefined && (
+          <Field icon="OBSERVATION" label="观察" tone="zinc">
+            <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words font-mono text-xs">
+              {step.observation}
+            </pre>
+          </Field>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  icon,
+  label,
+  tone,
+  children,
+}: {
+  icon: string;
+  label: string;
+  tone: "blue" | "amber" | "zinc";
+  children: React.ReactNode;
+}) {
+  const toneClass = {
+    blue: "border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200",
+    amber:
+      "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200",
+    zinc: "border-zinc-200 bg-zinc-50 text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200",
+  }[tone];
+  return (
+    <div className={`rounded-md border p-2 ${toneClass}`}>
+      <div className="mb-1 flex items-center gap-2 text-[10px] font-bold tracking-wider opacity-70">
+        <span>{icon}</span>
+        <span>{label}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function formatInput(input: unknown): string {
+  if (input === null || input === undefined) return "";
+  if (typeof input === "string") return input;
+  try {
+    return JSON.stringify(input);
+  } catch {
+    return String(input);
+  }
 }
