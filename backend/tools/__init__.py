@@ -2,7 +2,8 @@
 工具注册表：集中注册所有可用工具，供 Agent Kernel 动态调用。
 """
 from typing import Callable, Dict, Any
-from . import file_tools, system_tools, screenshot, cleanup, safety
+from . import file_tools, system_tools, screenshot, cleanup, safety, lifecycle
+from . import registry
 
 # 工具名称 -> 执行函数的映射
 TOOLS: Dict[str, Callable[..., str]] = {
@@ -20,6 +21,10 @@ TOOLS: Dict[str, Callable[..., str]] = {
     "verify_build": safety.verify_build,
     "rollback": safety.rollback,
     "list_snapshots": safety.list_snapshots,
+    # 工具生命周期管理（Phase 3：Agent 自主扩展能力）
+    "create_tool": lifecycle.create_tool,
+    "list_tools": lifecycle.list_tools,
+    "delete_tool": lifecycle.delete_tool,
 }
 
 # 工具元数据（供 Prompt 描述）
@@ -90,11 +95,31 @@ TOOLS_META: list[dict[str, Any]] = [
         "args": [],
     },
     {
+        "name": "create_tool",
+        "description": "创建自定义工具并注册（立即可用，持久化到本地）。参数: {\"name\": \"工具名(小写下划线)\", \"description\": \"描述\", \"args\": [\"参数名列表\"], \"code\": \"Python代码(可空,空则用模板)\"}。代码需定义 TOOL_NAME/TOOL_DESCRIPTION/TOOL_ARGS 和 run(**kwargs)->str。",
+        "args": ["name", "description", "args", "code"],
+    },
+    {
+        "name": "list_tools",
+        "description": "列出所有可用工具（内置+自定义）。无需参数。用于查看当前能力边界。",
+        "args": [],
+    },
+    {
+        "name": "delete_tool",
+        "description": "删除自定义工具（仅限自定义工具）。参数: {\"name\": \"工具名\"}。",
+        "args": ["name"],
+    },
+    {
         "name": "final_answer",
         "description": "任务已完成，返回最终结果。参数: {\"result\": \"最终答案\"}",
         "args": ["result"],
     },
 ]
+
+# 启动时加载所有自定义工具（从 backend/tools/custom/ 目录）
+_loaded = registry.load_all_custom_tools(TOOLS, TOOLS_META)
+if _loaded:
+    print(f"[tools] 已加载 {_loaded} 个自定义工具")
 
 
 def get_tool(name: str) -> Callable[..., str] | None:

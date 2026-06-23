@@ -183,6 +183,28 @@ class ConfigTestRequest(BaseModel):
     model: str = LLM_MODEL
 
 
+@router.get("/tools")
+async def list_all_tools():
+    """列出所有可用工具（内置 + 自定义），供前端展示。"""
+    from tools import TOOLS_META
+    builtin = [m for m in TOOLS_META if not m.get("custom")]
+    custom = [m for m in TOOLS_META if m.get("custom")]
+    return {
+        "builtin": builtin,
+        "custom": custom,
+        "total": len(TOOLS_META),
+    }
+
+
+@router.delete("/tools/{name}")
+async def delete_custom_tool(name: str):
+    """删除一个自定义工具。"""
+    from tools import lifecycle
+    result = lifecycle.delete_tool(name)
+    ok = result.startswith("[成功]")
+    return {"ok": ok, "message": result}
+
+
 @router.post("/config/test")
 async def test_llm_config(req: ConfigTestRequest):
     """

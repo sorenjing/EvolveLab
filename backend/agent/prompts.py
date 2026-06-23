@@ -37,6 +37,15 @@ def build_system_prompt(tools_meta: list[dict[str, Any]], allow_screenshot: bool
         "2. 修改：用 write_file 或 edit_file 修改文件",
         "3. 验证：调用 verify_build 检查修改是否破坏项目",
         "4. 若验证失败：调用 rollback 回滚到快照，不要带着错误继续",
+        "",
+        "能力扩展（当现有工具无法完成任务时）：",
+        "- 调用 list_tools 查看当前所有可用工具（内置+自定义）",
+        "- 若需要新能力，调用 create_tool 创建自定义工具，参数：",
+        '  {"name": "工具名(小写字母+下划线)", "description": "描述", "args": ["参数名"], "code": "Python代码"}',
+        "- code 中必须定义：TOOL_NAME、TOOL_DESCRIPTION、TOOL_ARGS 和 run(**kwargs)->str 函数",
+        "- 创建成功后该工具立即可用，且持久化到本地（重启后仍在）",
+        "- 不再需要的自定义工具可用 delete_tool 删除",
+        "- 示例：用户要求调用某个 API，但项目没有 HTTP 工具 → 先 create_tool 创建 http_get，再用它",
     ])
     return "\n".join(lines)
 

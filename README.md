@@ -235,7 +235,7 @@ evolvingAI/
 - [x] **Phase 1**：基础 ReAct Loop + 工具系统 + 前端 Timeline
 - [x] **安全加固**：命令注入防御、会话 TTL、JSON 解析容错、单例修复
 - [x] **Phase 2**：自我修改安全层（Git 快照 + 构建验证 + 回滚）
-- [ ] **Phase 3**：L1 新增工具的端到端自举
+- [x] **Phase 3**：Agent 自主扩展工具（create_tool + 本地持久化 + 工具列表）
 - [ ] **Phase 4**：L2/L3 Prompt/内核修改
 
 ## 贡献
