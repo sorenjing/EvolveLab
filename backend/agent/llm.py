@@ -1,13 +1,17 @@
 """
 LLM 调用封装：支持文本与图片输入（若模型支持视觉）。
+网络错误 / 5xx 自动重试（指数退避，最多 2 次）。
 """
-import os
+import asyncio
 import json
 import httpx
 from typing import Any
 
 from config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
 from auth.capability import get_llm_capability
+from logger import get_logger
+
+log = get_logger("agent.llm")
 
 
 class LLMClient:
@@ -22,6 +26,7 @@ class LLMClient:
         """
         调用 LLM，返回解析后的 JSON dict。
         若 image_url 提供且模型支持视觉，则加入图片输入。
+        网络错误 / 5xx 自动重试（指数退避，最多 2 次）。
         """
         messages = []
         if system_prompt:
@@ -48,15 +53,42 @@ class LLMClient:
             "Content-Type": "application/json",
         }
 
-        resp = await self.client.post(
-            f"{self.base_url}/chat/completions",
-            headers=headers,
-            json=payload,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        raw = data["choices"][0]["message"]["content"]
-        return self._extract_json(raw)
+        url = f"{self.base_url}/chat/completions"
+        max_retries = 2
+        last_exc: Exception | None = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                resp = await self.client.post(url, headers=headers, json=payload)
+                # 5xx 服务端错误，可重试
+                if resp.status_code >= 500:
+                    last_exc = httpx.HTTPStatusError(
+                        f"HTTP {resp.status_code}", request=resp.request, response=resp
+                    )
+                    if attempt < max_retries:
+                        wait = 2 ** attempt
+                        log.warning("LLM 返回 %d，%ds 后重试 (attempt %d/%d)",
+                                    resp.status_code, wait, attempt + 1, max_retries)
+                        await asyncio.sleep(wait)
+                        continue
+                    raise last_exc
+                # 4xx 客户端错误（鉴权/参数），不重试
+                resp.raise_for_status()
+                data = resp.json()
+                raw = data["choices"][0]["message"]["content"]
+                return self._extract_json(raw)
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.TransportError) as e:
+                last_exc = e
+                if attempt < max_retries:
+                    wait = 2 ** attempt
+                    log.warning("LLM 网络异常 %s，%ds 后重试 (attempt %d/%d)",
+                                type(e).__name__, wait, attempt + 1, max_retries)
+                    await asyncio.sleep(wait)
+                    continue
+                raise
+
+        # 理论上不会到达
+        raise last_exc or RuntimeError("LLM 调用失败")
 
     def _extract_json(self, text: str) -> dict[str, Any]:
         """从模型输出中提取 JSON（支持嵌套对象）。"""

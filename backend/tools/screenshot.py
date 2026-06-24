@@ -1,11 +1,11 @@
 """
 截图工具：捕获当前屏幕并保存，返回图片路径或 base64（供 LLM 视觉推理使用）。
-仅在检测到 LLM 支持视觉输入时启用。
+仅在检测到 LLM 支持视觉输入时启用。无 GUI 环境自动降级返回提示。
 """
 import base64
+import os
 import time
 from pathlib import Path
-from typing import Any
 
 try:
     import pyautogui
@@ -15,6 +15,25 @@ except Exception:
     PYAUTOGUI_AVAILABLE = False
 
 from config import SCREENSHOT_DIR
+from logger import get_logger
+
+log = get_logger("tools.screenshot")
+
+
+def _is_headless() -> bool:
+    """检测当前是否为无 GUI 环境（无法截屏）。"""
+    # Linux: 无 DISPLAY 环境变量
+    if os.name == "posix" and not os.environ.get("DISPLAY"):
+        return True
+    # Windows: 检测桌面会话
+    if os.name == "nt":
+        try:
+            import ctypes
+            if ctypes.windll.user32.GetDesktopWindow() == 0:
+                return True
+        except Exception:
+            return True
+    return False
 
 
 def screenshot(save_path: str = "", return_base64: bool = True) -> str:
@@ -25,6 +44,10 @@ def screenshot(save_path: str = "", return_base64: bool = True) -> str:
     """
     if not PYAUTOGUI_AVAILABLE:
         return "[错误] 截图依赖未安装（pyautogui / PIL），请执行: pip install pyautogui pillow"
+
+    if _is_headless():
+        log.warning("当前为无 GUI 环境，截图不可用")
+        return "[错误] 当前为无 GUI 环境（headless），截图不可用。请在有桌面环境的机器上运行。"
 
     try:
         img = pyautogui.screenshot()
@@ -40,4 +63,5 @@ def screenshot(save_path: str = "", return_base64: bool = True) -> str:
             return f"data:image/png;base64,{data}"
         return str(target)
     except Exception as e:
+        log.error("截图失败: %s", e)
         return f"[错误] 截图失败: {e}"

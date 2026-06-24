@@ -9,14 +9,20 @@ from typing import Any
 
 from config import PROJECT_ROOT
 from auth.permissions import get_permission_cache
+from logger import get_logger
 
+log = get_logger("tools.system")
 _perm = get_permission_cache()
+
+# 单条命令输出上限，防止撑爆 LLM 上下文
+MAX_OUTPUT = 10000
 
 
 def execute_command(command: str, cwd: str = "") -> str:
     """执行白名单内的命令，返回标准输出/错误。"""
     allowed, reason = _perm.check_command(command)
     if not allowed:
+        log.warning("命令被拦截: %s (%s)", command[:80], reason)
         return f"[错误] 命令被拦截: {reason}"
 
     role = _perm.get_role_config()
@@ -29,6 +35,8 @@ def execute_command(command: str, cwd: str = "") -> str:
         except PermissionError as e:
             return f"[错误] cwd 越界: {e}"
 
+    log.info("执行命令: %s (cwd=%s, timeout=%ss)", command[:100], run_dir, timeout)
+
     try:
         result = subprocess.run(
             command,
@@ -40,14 +48,22 @@ def execute_command(command: str, cwd: str = "") -> str:
             encoding="utf-8",
             errors="replace",
         )
-        out = result.stdout.strip()
-        err = result.stderr.strip()
+        out = (result.stdout or "").strip()
+        err = (result.stderr or "").strip()
+
+        # 截断超长输出，防止撑爆 LLM 上下文
+        if len(out) > MAX_OUTPUT:
+            out = out[:MAX_OUTPUT] + f"\n... [输出已截断，共 {len(out)} 字符]"
+        if len(err) > MAX_OUTPUT:
+            err = err[:MAX_OUTPUT] + f"\n... [错误输出已截断，共 {len(err)} 字符]"
+
         if result.returncode != 0:
             return f"[退出码 {result.returncode}] stdout:\n{out}\nstderr:\n{err}"
         return out or "[成功] 命令执行完毕，无输出"
     except subprocess.TimeoutExpired:
         return f"[错误] 命令超时（>{timeout}s）"
     except Exception as e:
+        log.error("命令执行异常: %s", e)
         return f"[错误] 执行异常: {e}"
 
 

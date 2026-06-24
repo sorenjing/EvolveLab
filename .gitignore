@@ -62,6 +62,7 @@ __pycache__/
 # Agent 运行时产物
 screenshots/
 *.bak
+logs/
 
 # PyInstaller 打包产物
 build/

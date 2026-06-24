@@ -89,6 +89,12 @@ def register_tool(
     if not name[0].isalpha():
         return False, "工具名必须以字母开头"
 
+    # 代码安全审查：拦截危险调用（os.system / subprocess / eval 等）
+    from .code_safety import audit_code
+    is_safe, reasons = audit_code(code)
+    if not is_safe:
+        return False, f"代码安全审查未通过: {'; '.join(reasons)}"
+
     file_path = CUSTOM_DIR / f"{name}.py"
 
     # 写入文件

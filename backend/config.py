@@ -13,6 +13,12 @@ LLM_MODEL = os.getenv("LLM_MODEL", "glm-4-flash")
 # Agent 配置
 MAX_STEPS = int(os.getenv("MAX_STEPS", "15"))
 
+# Agent 流接口鉴权 token（为空则不鉴权；设置后 /api/agent/stream 需携带 X-Agent-Token）
+AGENT_TOKEN = os.getenv("AGENT_TOKEN", "")
+
+# 会话持久化：Redis URL（为空则用内存 dict，适合本地开发）
+REDIS_URL = os.getenv("REDIS_URL", "")
+
 # 截图保存目录
 SCREENSHOT_DIR = PROJECT_ROOT / "screenshots"
 SCREENSHOT_DIR.mkdir(exist_ok=True)

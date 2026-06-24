@@ -64,17 +64,7 @@ def compress_history(history: list[dict[str, Any]]) -> tuple[list[dict[str, Any]
     # 2. 保留关键文件操作结果
     summary_lines.append("已完成的操作摘要：")
     for h in old_steps:
-        action = h.get("action", "")
-        thought = h.get("thought", "")
-        obs = h.get("observation", "")
-
-        # 只保留关键信息，截断过长的 observation
-        obs_short = obs[:300] if len(obs) > 300 else obs
-
-        # 标记成功/失败
-        status = "成功" if "[错误]" not in obs else "失败"
-
-        summary_lines.append(f"  Step({action})[{status}]: {thought[:100]} | 结果: {obs_short}")
+        summary_lines.append(_summarize_step(h))
 
     # 3. 保留任务完成状态
     has_final = any(h.get("action") == "final_answer" for h in old_steps)
@@ -125,3 +115,32 @@ def build_compressed_user_prompt(
 
     lines.extend(["", "请输出下一步的 JSON："])
     return "\n".join(lines)
+
+
+def _summarize_step(h: dict[str, Any]) -> str:
+    """将单步历史压缩为一行结构化摘要，按工具类型保留关键信息。"""
+    action = h.get("action", "")
+    thought = h.get("thought", "")
+    obs = h.get("observation", "")
+    is_error = "[错误]" in obs
+
+    # 失败操作保留更多错误信息（可能需要重试决策）
+    if is_error:
+        return f"  Step({action})[失败]: {thought[:80]} | 错误: {obs[:200]}"
+
+    # 按工具类型提取关键信息
+    if action == "read_file":
+        # 文件内容不保留（太长），只标记已读
+        return f"  Step(read_file)[成功]: {thought[:80]}（文件内容已省略）"
+    if action in ("write_file", "edit_file"):
+        return f"  Step({action})[成功]: {obs[:120]}"
+    if action == "execute_command":
+        return f"  Step(execute_command)[成功]: {thought[:80]} | 输出: {obs[:150]}"
+    if action == "list_files":
+        first_line = obs.split("\n")[0] if obs else ""
+        return f"  Step(list_files)[成功]: {first_line}"
+    if action in ("create_snapshot", "create_tool", "delete_tool"):
+        return f"  Step({action})[成功]: {obs[:120]}"
+    if action == "final_answer":
+        return f"  Step(final_answer): {obs[:150]}"
+    return f"  Step({action})[成功]: {thought[:80]} | 结果: {obs[:150]}"

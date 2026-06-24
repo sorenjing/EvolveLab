@@ -15,7 +15,7 @@
 
 <p align="center">
   <a href="#这是什么">这是什么</a> ·
-  <a href="#和-cursortrae-有什么不同">差异化</a> ·
+  <a href="#和-cursorcodexclaude-code-有什么不同">差异化</a> ·
   <a href="#能做什么">能做什么</a> ·
   <a href="#快速开始">快速开始</a> ·
   <a href="#架构">架构</a> ·
@@ -38,17 +38,17 @@ EvolveLab 是一个**白盒的 AI Agent 实验平台**。
 > - 想搭建个人自动化工作流的极客
 > - 对"AI 能怎么思考"感到好奇的人
 
-## 和 Cursor/Trae 有什么不同？
+## 和 Cursor/Codex/Claude Code 有什么不同？
 
-| 维度 | Cursor / Trae | EvolveLab |
-|------|---------------|-----------|
+| 维度 | Cursor / Codex / Claude Code | EvolveLab |
+|------|------------------------------|-----------|
 | **过程可见性** | 黑盒，只给结果 | 白盒，每步思考可见 |
 | **工具系统** | 固定内置 | 可动态创建/删除，Agent 能自举新工具 |
 | **定位** | 代码助手（需求驱动） | Agent 实验平台（探索驱动） |
 | **内核** | 闭源 | 自研 ReAct 内核，完全开源 |
 | **数据** | 部分经过云端 | 完全本地运行 |
 
-**一句话**：Cursor 帮你写代码，EvolveLab 帮你理解 Agent 是怎么工作的。
+**一句话**：它们帮你写代码，EvolveLab 帮你理解 Agent 是怎么工作的。
 
 ## 能做什么
 
