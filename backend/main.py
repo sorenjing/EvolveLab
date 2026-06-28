@@ -15,8 +15,10 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from api.routes import router
+from exceptions import register_exception_handlers
 
 app = FastAPI(title="EvolveLab Backend", version="0.1.0")
+register_exception_handlers(app)
 
 # 速率限制：默认每分钟 30 次请求/IP，防止滥用消耗 LLM 额度
 limiter = Limiter(key_func=get_remote_address, default_limits=["30/minute"])
