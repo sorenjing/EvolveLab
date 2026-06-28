@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装依赖
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: 语法检查（compileall）
+        run: python -m compileall -q .
+
+      - name: 单元测试
+        run: pytest tests/ -v
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建检查
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint
