@@ -159,44 +159,113 @@ Step 4: final_answer(result="已创建 http_get 工具并完成任务")
 
 ---
 
-## 6. 目录结构
+## 6. 分层架构
+
+后端采用经典的**路由层 / 服务层 / 仓储层**三层分离，路由层保持薄（仅 HTTP 转换），业务逻辑下沉到 Service：
 
 ```
-evolvingAI/
+┌─────────────────────────────────────────────────────────────┐
+│  api/routes.py    （薄路由层：HTTP 解析、参数校验、鉴权依赖）│
+└──────────────────────────┬──────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  services/         （服务层：业务编排，不感知 HTTP 细节）    │
+│  ├── agent_service.py   Agent 创建 + SSE 事件流 + 会话查询  │
+│  ├── tool_service.py    工具列表 + 删除                     │
+│  ├── admin_service.py   角色/白名单/能力/清理               │
+│  └── config_service.py  LLM 配置测试                        │
+└──────────────────────────┬──────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  仓储与基础设施层                                            │
+│  ├── session_store.py   会话存储抽象（内存 / Redis）        │
+│  ├── agent/kernel.py    Agent 内核（ReAct 循环）            │
+│  ├── tools/             工具注册表与实现                    │
+│  └── auth/              权限/能力/管理认证                  │
+└─────────────────────────────────────────────────────────────┘
+
+异常处理：services 抛 AppError 子类，由 exceptions.py 的全局处理器
+统一为 {code, message} 错误响应；成功响应保持原格式不破坏前端。
+```
+
+设计原则：
+- 路由层不写业务逻辑，service 不感知 HTTP（便于复用与测试）
+- 成功响应保持原格式（前端无需改造），仅统一错误响应
+- 仓储层已用 repository 模式（session_store），不额外抽象避免过度设计
+
+---
+
+## 7. 目录结构
+
+```
+EvolveLab/
 ├── backend/
-│   ├── main.py                   # FastAPI 入口
+│   ├── main.py                   # FastAPI 入口（注册路由、异常、中间件）
 │   ├── config.py                 # 配置（环境变量）
+│   ├── exceptions.py             # 自定义异常 + 全局异常处理器
+│   ├── session_store.py          # 会话存储抽象（内存 / Redis）
+│   ├── logger.py                 # 结构化日志
 │   ├── agent/
 │   │   ├── kernel.py             # Agent Kernel（ReAct 循环）
 │   │   ├── llm.py                # LLM 调用封装
 │   │   └── prompts.py            # System Prompt 模板
 │   ├── api/
-│   │   └── routes.py             # API 路由（SSE + 管理 + 工具）
+│   │   └── routes.py             # 薄路由层（仅 HTTP 转换 + 鉴权依赖）
+│   ├── services/                 # 业务服务层
+│   │   ├── agent_service.py      # Agent 运行 + SSE 流 + 会话
+│   │   ├── tool_service.py       # 工具列表与删除
+│   │   ├── admin_service.py      # 角色/白名单/能力/清理
+│   │   └── config_service.py     # LLM 配置测试
 │   ├── auth/
 │   │   ├── permissions.py        # 权限管理 + 命令注入防御
 │   │   ├── capability.py         # LLM 能力探测
 │   │   └── admin.py              # 管理接口认证
-│   └── tools/
-│       ├── __init__.py           # 工具注册表
-│       ├── file_tools.py         # 文件操作工具
-│       ├── system_tools.py       # 系统命令工具
-│       ├── screenshot.py         # 截屏工具
-│       ├── cleanup.py            # 清理工具
-│       ├── safety.py             # 自我修改安全层
-│       ├── lifecycle.py          # 工具生命周期管理
-│       ├── registry.py           # 自定义工具动态加载器
-│       └── custom/               # Agent 创建的自定义工具（持久化）
+│   ├── tools/
+│   │   ├── __init__.py           # 工具注册表
+│   │   ├── file_tools.py         # 文件操作工具
+│   │   ├── system_tools.py       # 系统命令工具
+│   │   ├── screenshot.py         # 截屏工具
+│   │   ├── cleanup.py            # 清理工具
+│   │   ├── safety.py             # 自我修改安全层
+│   │   ├── lifecycle.py          # 工具生命周期管理
+│   │   ├── registry.py           # 自定义工具动态加载器
+│   │   └── custom/               # Agent 创建的自定义工具（持久化）
+│   ├── tests/
+│   │   └── test_code_safety.py   # 代码安全测试
+│   ├── requirements.txt          # 依赖锁定
+│   ├── pyproject.toml            # black/isort/pytest 配置
+│   └── Dockerfile
 ├── src/
 │   └── app/
-│       └── page.tsx              # 前端主界面
-├── DESIGN.md                     # 本文档
+│       ├── layout.tsx           # 根布局（主题脚本 + ErrorBoundary）
+│       ├── page.tsx             # 主页（状态管理 + SSE 消费）
+│       ├── globals.css          # Tailwind + class-based dark 变体
+│       ├── components/
+│       │   ├── Header.tsx       # 顶栏（含 ThemeToggle）
+│       │   ├── InputArea.tsx    # 任务输入
+│       │   ├── Timeline.tsx      # 执行轨迹（状态色/折叠/长内容）
+│       │   ├── ConfigPanel.tsx  # LLM 配置面板
+│       │   ├── ToolsPanel.tsx   # 工具管理面板
+│       │   ├── TaskTemplates.tsx # 任务模板首页
+│       │   ├── ThemeToggle.tsx  # 暗黑模式切换
+│       │   └── ErrorBoundary.tsx # 全局错误边界
+│       └── lib/
+│           ├── types.ts         # 共享类型与配置工具
+│           └── templates.ts     # 任务模板数据
+├── docs/
+│   └── usage.md                 # 使用文档
+├── .github/workflows/ci.yml     # GitHub Actions CI
+├── docker-compose.yml           # Docker 一键部署
+├── Dockerfile                   # 前端镜像
 ├── README.md
+├── DESIGN.md                    # 本文档
+├── RUN.md                       # 运行与部署指南
 └── package.json
 ```
 
 ---
 
-## 7. 演进路线
+## 8. 演进路线
 
 - [x] **Phase 1**：基础 ReAct Loop + 工具系统 + 前端 Timeline
 - [x] **安全加固**：命令注入防御、会话 TTL、JSON 解析容错、单例修复
