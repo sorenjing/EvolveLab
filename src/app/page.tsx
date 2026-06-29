@@ -16,6 +16,7 @@ import { ConfigPanel } from "@/app/components/ConfigPanel";
 import { ToolsPanel } from "@/app/components/ToolsPanel";
 import { InputArea } from "@/app/components/InputArea";
 import { Timeline } from "@/app/components/Timeline";
+import { TaskTemplates } from "@/app/components/TaskTemplates";
 
 export default function Home() {
   const [task, setTask] = useState("");
@@ -55,6 +56,18 @@ export default function Home() {
         typeof ev.payload.message === "string" ? ev.payload.message : "未知错误";
       setErrorMsg(msg);
       setStatus("error");
+      // 同时把错误填入对应 step，让 Timeline 显示失败状态色
+      if (ev.step !== undefined) {
+        setSteps((prev) => {
+          const idx = prev.findIndex((s) => s.step === ev.step);
+          if (idx === -1) {
+            return [...prev, { step: ev.step, error: msg }];
+          }
+          const copy = [...prev];
+          copy[idx] = { ...copy[idx], error: msg };
+          return copy;
+        });
+      }
       return;
     }
 
@@ -161,7 +174,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen w-full bg-zinc-50 text-zinc-900 dark:bg-black dark:text-zinc-100">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-8">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-6 sm:gap-6 sm:py-8">
         <Header
           onOpenConfig={() => setShowConfig((v) => !v)}
           configReady={!!config.apiKey.trim()}
@@ -190,6 +203,10 @@ export default function Home() {
           onRun={runAgent}
           onStop={stopAgent}
         />
+
+        {steps.length === 0 && status === "idle" && (
+          <TaskTemplates onPick={setTask} disabled={running} />
+        )}
 
         {errorMsg && (
           <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">

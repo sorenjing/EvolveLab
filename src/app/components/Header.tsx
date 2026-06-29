@@ -1,3 +1,5 @@
+import { ThemeToggle } from "@/app/components/ThemeToggle";
+
 export function Header({
   onOpenConfig,
   configReady,
@@ -8,14 +10,15 @@ export function Header({
   onOpenTools: () => void;
 }) {
   return (
-    <header className="flex items-center justify-between border-b border-zinc-200 pb-4 dark:border-zinc-800">
-      <div>
+    <header className="flex items-center justify-between gap-2 border-b border-zinc-200 pb-4 dark:border-zinc-800">
+      <div className="min-w-0">
         <h1 className="text-xl font-bold tracking-tight">EvolveLab</h1>
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="mt-1 truncate text-xs text-zinc-500 dark:text-zinc-400">
           可视化 AI Agent 实验平台 · 看清每一步思考
         </p>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
+        <ThemeToggle />
         <button
           type="button"
           onClick={onOpenTools}
