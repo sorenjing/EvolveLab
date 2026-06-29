@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-blue.svg">
+  <img alt="License" src="https://img.shields.io/badge/license-PolyForm--Noncommercial-orange.svg">
   <img alt="Python" src="https://img.shields.io/badge/python-3.10+-3776AB.svg">
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-000000.svg">
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.115-009688.svg">
@@ -329,7 +329,9 @@ Agent 修改自身源码时的保护流程：
 
 ## 贡献
 
-欢迎 Issue 和 PR！提 PR 前请确保：
+欢迎 Issue 和 PR！详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+提 PR 前请确保：
 
 1. 后端代码通过 `python -m py_compile` 语法检查
 2. 前端代码通过 `npm run build` 构建检查
@@ -337,4 +339,11 @@ Agent 修改自身源码时的保护流程：
 
 ## License
 
-[MIT](LICENSE) © 2026 sorenjing
+本项目采用 [PolyForm Noncommercial License 1.0.0](LICENSE)。
+
+- ✅ **允许**：个人学习、研究、教学、内部非商用使用、修改与再分发（须保留本许可）
+- ❌ **禁止**：未经授权的商用——包括但不限于销售本软件、嵌入付费产品/付费服务、作为 SaaS 提供、用于支撑付费业务的内部使用
+
+如需商用，请通过 GitHub Issues 联系作者获取商业授权。
+
+> 个人项目，独立维护，感谢理解与支持。

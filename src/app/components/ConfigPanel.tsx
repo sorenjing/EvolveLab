@@ -48,9 +48,10 @@ export function ConfigPanel({
   return (
     <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
       <p className="mb-3 text-sm font-semibold">LLM 配置</p>
-      <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-        配置仅保存在浏览器 localStorage，不会写入文件或上传 GitHub。
-      </p>
+      <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+        <strong>安全提示：</strong>API Key 仅保存在浏览器 localStorage，不会上传 GitHub。
+        但 localStorage 非加密存储，共享电脑请改用环境变量 <code className="rounded bg-amber-100 px-1 dark:bg-amber-900">LLM_API_KEY</code> 注入后端（详见 RUN.md）。
+      </div>
       <div className="flex flex-col gap-3">
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium">API Key</span>

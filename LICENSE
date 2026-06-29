@@ -1,21 +1,102 @@
-MIT License
+PolyForm Noncommercial License 1.0.0
 
-Copyright (c) 2026 sorenjing
+<https://polyformproject.org/licenses/noncommercial/1.0.0>
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Copyright © 2026 sorenjing. All rights reserved.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+This software and its associated documentation (the "Software") may only be
+used for **noncommercial purposes**. By exercising any right to the Software,
+you accept and agree to be bound by the terms of this license.
+
+---
+
+## 1. Definitions
+
+**"License"** means this PolyForm Noncommercial License 1.0.0.
+
+**"Licensor"** means the copyright owner or entity authorized by the copyright
+owner that is granting the License — here, sorenjing.
+
+**"Software"** means the source code, object code, binaries, configuration,
+documentation, and any related materials made available under this License.
+
+**"You"** / **"Your"** means any person or entity exercising rights under
+this License.
+
+**"Noncommercial"** means use that is not primarily intended for or directed
+toward commercial advantage or monetary compensation. To clarify:
+
+  - Personal learning, research, teaching, and self-education are
+    Noncommercial.
+  - Internal use at a company for the company's own purposes is
+    Noncommercial **only if** it is not part of a product or service the
+    company sells, leases, or otherwise monetizes.
+  - Use that is part of a paid product, paid service, SaaS offering,
+    consulting engagement, or any offering for which a fee is charged is
+    **not** Noncommercial.
+  - Distributing the Software itself, modified or unmodified, in exchange
+    for payment is **not** Noncommercial.
+
+If you are unsure whether your use is Noncommercial, treat it as not
+Noncommercial and contact the Licensor for clarification.
+
+## 2. Right to Use
+
+Provided that You comply with all terms of this License, the Licensor grants
+You a worldwide, royalty-free, non-exclusive, non-transferable,
+non-sublicensable license to:
+
+  (a) use, copy, and run the Software for Noncommercial purposes only;
+
+  (b) modify the Software and prepare derivative works ("Modified Software")
+      for Noncommercial purposes only; and
+
+  (c) distribute the Software or Modified Software, in source or object form,
+      only under this License and only for Noncommercial use by recipients.
+
+## 3. Conditions
+
+You must:
+
+  (a) retain this License and all copyright notices in all copies or
+      substantial portions of the Software;
+
+  (b) clearly state any modifications You have made;
+
+  (c) make the complete corresponding source code of any Modified Software
+      you distribute available under this License; and
+
+  (d) ensure that any recipient of the Software or Modified Software from
+      You is bound by this License.
+
+## 4. Commercial Use Requires a Separate License
+
+Any use of the Software that is not Noncommercial — including but not
+limited to selling the Software, embedding it in a paid product or paid
+service, offering it as SaaS, or using it internally to support a paid
+product or paid service — requires a separate commercial license from the
+Licensor.
+
+To obtain a commercial license, contact the Licensor via the project's
+GitHub repository at <https://github.com/sorenjing/EvolveLab>.
+
+## 5. No Warranty
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT WILL THE
+LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+## 6. Termination
+
+This License terminates automatically if You breach any of its terms.
+Upon termination You must immediately cease all use of the Software and
+destroy all copies in your possession or control.
+
+## 7. Entire License
+
+This License constitutes the entire agreement between the Licensor and You
+with respect to the Software and supersedes all prior or contemporaneous
+understandings.
